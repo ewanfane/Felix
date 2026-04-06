@@ -55,17 +55,10 @@ def process_message_for_memory(message_id):
             prompt = USER_CHUNKING_PROMPT.format(user_input=context_payload)
             system_role = "You are a User Insight Extractor."
         else:
-            # === NEW: Load Personality for Audit ===
-            try:
-                personality_text = fs.read_file("personality.md")
-            except:
-                personality_text = "Standard Professional Assistant."
-
             prompt = AI_CHUNKING_PROMPT.format(
-                ai_response=message.content,
-                personality_profile=personality_text
+                ai_response=message.content
             )
-            system_role = "You are an AI Persona and Metacognition Auditor."
+            system_role = "You are an AI Memory Extractor."
 
         # Execute LLM Call
         messages = [
@@ -93,8 +86,8 @@ def process_message_for_memory(message_id):
         MemoryChunk.objects.create(
             content=chunk_data['content'],        # The Summary (Searchable)
             embedding=vector,                     # Vector of Summary
-            reflection=chunk_data['reflection'],  # The Private Audit
-            metadata=chunk_data['metadata'],      # Tags + Evolution Stage
+            reflection="",                        # Reflection removed
+            metadata=chunk_data['metadata'],      # Tags
             source_message=message
         )
 

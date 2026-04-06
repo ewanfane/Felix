@@ -119,11 +119,6 @@ class ScribeService:
         if chunk_match:
             response_data["master_chunk_content"] = chunk_match.group(1).strip()
 
-        # 2. Extract Reflection (NEW)
-        ref_match = re.search(r'<reflection>(.*?)</reflection>', raw_text, re.DOTALL)
-        if ref_match:
-            response_data["reflection"] = ref_match.group(1).strip()
-
         # 3. Extract Learnings
         learnings_match = re.search(r'<learnings>(.*?)</learnings>', raw_text, re.DOTALL)
         if learnings_match:

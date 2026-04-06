@@ -31,7 +31,7 @@ class MemoryChunk(models.Model):
     metadata = JSONField(default=dict)
 
     # AI's reflection on the user's message
-    reflection = models.TextField()
+    reflection = models.TextField(blank=True, default="")
     
     # Link back to the raw message
     source_message = models.ForeignKey(ChatMessage, on_delete=models.SET_NULL, null=True, blank=True)
