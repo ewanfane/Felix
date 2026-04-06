@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Felix: System Internals</title>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <style>
+        :root {
+            --bg-dark: #0f1115;
+            --bg-panel: #181b21;
+            --accent: #3a7bd5;
+            --accent-dim: #2b5c92;
+            --text-main: #e0e0e0;
+            --text-dim: #888;
+            --code-bg: #111;
+            --border: #333;
+            --highlight: #d4a017; /* Gold for reflection */
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Inter, monospace; /* Monospace feel for debug */
+            margin: 0;
+            padding: 20px;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 20px;
+        }
+
+        h1 { margin: 0; font-size: 1.5rem; font-weight: 400; color: var(--accent); }
+        .meta { font-size: 0.9rem; color: var(--text-dim); }
+
+        /* TABS */
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .tab-btn {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            padding: 10px 20px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-family: inherit;
+            transition: 0.2s;
+        }
+        .tab-btn.active {
+            background: var(--accent-dim);
+            color: white;
+            border-color: var(--accent);
+        }
+
+        /* CONTENT AREA */
+        .content-container {
+            flex: 1;
+            overflow-y: auto;
+            padding-right: 10px;
+        }
+
+        .hidden { display: none; }
+
+        /* MEMORY CARDS */
+        .memory-card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            position: relative;
+        }
+        .memory-card::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 0; bottom: 0;
+            width: 4px;
+            background: var(--highlight);
+            border-top-left-radius: 8px;
+            border-bottom-left-radius: 8px;
+        }
+
+        .section-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .reflection-text {
+            color: #e0d0b0;
+            font-style: italic;
+            background: rgba(212, 160, 23, 0.1); /* Low opacity gold */
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            border-left: 2px solid var(--highlight);
+        }
+
+        .content-text { margin-bottom: 15px; line-height: 1.5; }
+
+        .metadata-block {
+            background: var(--code-bg);
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.85rem;
+            color: #8abeb7;
+            overflow-x: auto;
+        }
+
+        /* PROMPT LOGS */
+        .log-entry {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            margin-bottom: 15px;
+            border-radius: 6px;
+        }
+        .log-header {
+            padding: 10px 15px;
+            background: #222;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+        }
+        .log-body {
+            padding: 15px;
+            display: none;
+            background: var(--code-bg);
+            overflow-x: auto;
+        }
+        .log-body.open { display: block; }
+        
+        pre { margin: 0; white-space: pre-wrap; color: #ccc; font-size: 0.85rem; }
+        .string { color: #b5bd68; }
+        .number { color: #de935f; }
+        .boolean { color: #f0c674; }
+        .key { color: #81a2be; }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        <div>
+            <h1>System Internals</h1>
+            <span class="meta">Session: {{ session.title }} | ID: {{ session.id }}</span>
+        </div>
+        <button onclick="window.close()" style="background:none; border:none; color:#888; cursor:pointer;">
+            <i class="ph ph-x" style="font-size: 1.5rem;"></i>
+        </button>
+    </header>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="showTab('memories')">
+            <i class="ph ph-brain"></i> Memory Context
+        </button>
+        <button class="tab-btn" onclick="showTab('prompts')">
+            <i class="ph ph-terminal-window"></i> Prompt Logs
+        </button>
+    </div>
+
+    <div id="memories" class="content-container">
+        {% for mem in memories %}
+        <div class="memory-card">
+            <span class="section-label">AI Reflection</span>
+            <div class="reflection-text">
+                {{ mem.reflection|default:"No reflection recorded." }}
+            </div>
+
+            <span class="section-label">RAG Content</span>
+            <div class="content-text">
+                {{ mem.content }}
+            </div>
+
+            <span class="section-label">HSCF Metadata</span>
+            <textarea id="raw-meta-{{ mem.id }}" style="display:none;">{{ mem.metadata|safe }}</textarea>
+            
+            <div id="display-meta-{{ mem.id }}" class="metadata-block">Loading...</div>
+        </div>
+        {% empty %}
+        <div style="text-align:center; color:#666; margin-top:50px;">No memory chunks generated yet.</div>
+        {% endfor %}
+    </div>
+
+    <div id="prompts" class="content-container hidden">
+        {% for log in prompts %}
+        <div class="log-entry">
+            <div class="log-header" onclick="toggleLog(this)">
+                <span>Timestamp: {{ log.created_at|date:"Y-m-d H:i:s" }}</span>
+                <i class="ph ph-caret-down"></i>
+            </div>
+            <div class="log-body">
+                <pre class="json-render-log">{{ log.full_prompt }}</pre>
+            </div>
+        </div>
+        {% empty %}
+        <div style="text-align:center; color:#666; margin-top:50px;">No prompt logs available.</div>
+        {% endfor %}
+    </div>
+
+    <script>
+        // --- 1. Tab Switching ---
+        function showTab(tabId) {
+            document.querySelectorAll('.content-container').forEach(el => el.classList.add('hidden'));
+            document.getElementById(tabId).classList.remove('hidden');
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            event.target.closest('.tab-btn').classList.add('active');
+        }
+
+        // --- 2. Toggle Log Accordion ---
+        function toggleLog(header) {
+            const body = header.nextElementSibling;
+            body.classList.toggle('open');
+            const icon = header.querySelector('i');
+            
+            if (body.classList.contains('open')) {
+                icon.classList.replace('ph-caret-down', 'ph-caret-up');
+            } else {
+                icon.classList.replace('ph-caret-up', 'ph-caret-down');
+            }
+        }
+
+        // --- 3. Syntax Highlighting Helper ---
+        function syntaxHighlight(json) {
+            // Converts JSON object string to HTML with colors
+            if (typeof json !== 'string') {
+                json = JSON.stringify(json, undefined, 2);
+            }
+            json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                var cls = 'number';
+                if (/^"/.test(match)) {
+                    if (/:$/.test(match)) {
+                        cls = 'key';
+                    } else {
+                        cls = 'string';
+                    }
+                } else if (/true|false/.test(match)) {
+                    cls = 'boolean';
+                } else if (/null/.test(match)) {
+                    cls = 'null'; // You can add CSS for .null { color: magenta; }
+                }
+                return '<span class="' + cls + '">' + match + '</span>';
+            });
+        }
+
+        // --- 4. Robust Parsing Logic (The Fix) ---
+        function tryParseAndHighlight(rawId, displayId) {
+            const rawEl = document.getElementById(rawId);
+            const displayEl = document.getElementById(displayId);
+            if (!rawEl || !displayEl) return;
+
+            let rawText = rawEl.value.trim();
+            if (!rawText) {
+                displayEl.innerHTML = '<span style="color:#666">Empty data</span>';
+                return;
+            }
+
+            let jsonObj = null;
+            let success = false;
+
+            // Attempt A: Standard JSON Parse
+            try {
+                jsonObj = JSON.parse(rawText);
+                success = true;
+            } catch (e) {
+                // Attempt B: Python Dictionary Cleanup
+                // Replaces single quotes with double, None with null, etc.
+                console.warn(`Standard parse failed for ${rawId}, attempting Python fix...`);
+                try {
+                    const fixedText = rawText
+                        .replace(/'/g, '"')
+                        .replace(/\bNone\b/g, 'null')
+                        .replace(/\bTrue\b/g, 'true')
+                        .replace(/\bFalse\b/g, 'false');
+                    jsonObj = JSON.parse(fixedText);
+                    success = true;
+                } catch (e2) {
+                    console.error(`All parsing failed for ${rawId}. Displaying raw text.`);
+                }
+            }
+
+            if (success) {
+                // If parsed successfully, make it pretty
+                displayEl.innerHTML = `<pre>${syntaxHighlight(jsonObj)}</pre>`;
+            } else {
+                // If failed, dump the raw text so we can at least read it
+                displayEl.innerHTML = `<pre style="color:#ccc; white-space:pre-wrap;">${rawText}</pre>`;
+            }
+        }
+
+        // --- 5. Initialize on Load ---
+        document.addEventListener("DOMContentLoaded", () => {
+            // Process all Memories
+            document.querySelectorAll('[id^="raw-meta-"]').forEach(el => {
+                const id = el.id.replace('raw-meta-', '');
+                tryParseAndHighlight(`raw-meta-${id}`, `display-meta-${id}`);
+            });
+
+            // Process all Logs
+            document.querySelectorAll('[id^="raw-log-"]').forEach(el => {
+                const id = el.id.replace('raw-log-', '');
+                tryParseAndHighlight(`raw-log-${id}`, `display-log-${id}`);
+            });
+        });
+    </script>
+</body>
+</html>
