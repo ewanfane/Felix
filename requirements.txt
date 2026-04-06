@@ -1,0 +1,9 @@
+Django>=5.0
+psycopg2-binary>=2.9.9
+celery>=5.3.6
+redis>=5.0.1
+django-celery-beat>=2.5.0  # Database-backed Periodic Tasks (The "Heartbeat")
+pgvector>=0.2.0
+python-dotenv>=1.0.1
+openai>=1.2.0
+json-repair

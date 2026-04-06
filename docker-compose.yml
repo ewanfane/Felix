@@ -1,0 +1,70 @@
+services:
+  # 1. Database (Postgres + pgvector)
+  db:
+    image: ankane/pgvector:latest
+    container_name: felix_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    environment:
+      POSTGRES_DB: felix
+      POSTGRES_USER: felix
+      POSTGRES_PASSWORD: redbread
+    ports:
+      - "5432:5432"
+
+  # 2. Message Broker (Redis)
+  redis:
+    image: redis:alpine
+    container_name: felix_redis
+    expose:
+      - 6379
+
+  # 3. Web Server (Django)
+  web:
+    build: .
+    container_name: felix_web
+    command: python manage.py runserver 0.0.0.0:8081
+    volumes:
+      - .:/app
+    ports:
+      - "8081:8081"
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DB_HOST=db
+      - REDIS_URL=redis://redis:6379/0
+
+  # 4. Background Brain (Celery Worker)
+  # Handles heavy lifting: Summarization, Embedding, File Writing
+  worker:
+    build: .
+    container_name: felix_worker
+    command: celery -A Felix worker -l info
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DB_HOST=db
+      - REDIS_URL=redis://redis:6379/0
+
+  # 5. Heartbeat (Celery Beat)
+  # Triggers the "Sleep Cycles" and "Reconciliation Loops"
+  beat:
+    build: .
+    container_name: felix_beat
+    command: celery -A Felix beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DB_HOST=db
+      - REDIS_URL=redis://redis:6379/0
+
+volumes:
+  postgres_data:
