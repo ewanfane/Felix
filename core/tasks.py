@@ -5,6 +5,7 @@ from .services.llm import LLMService
 from .services.embedding import EmbeddingService
 from .services.filesystem import FileSystemService
 from .services.scribe import ScribeService
+from .services.file_manager import FileManager
 from .ai_engine.prompts import USER_CHUNKING_PROMPT, AI_CHUNKING_PROMPT, FILE_OPS_PROMPT
 from .services.utils import parse_chunking_output
 
@@ -99,6 +100,33 @@ def process_message_for_memory(message_id):
         return f"Memory Task Error: {str(e)}"
 
 
+PATH_TO_CATEGORY = {
+    "user": "user_profile",
+    "identity": "user_profile",
+    "profile": "user_profile",
+    "preference": "user_preferences",
+    "goal": "user_goals",
+    "agent": "agent_identity",
+    "ontology": "agent_identity",
+    "capability": "agent_capabilities",
+    "project": "project",
+    "projects": "project",
+}
+
+def _map_old_path_to_category(path):
+    path_lower = path.lower().replace("\\", "/")
+    for keyword, category in PATH_TO_CATEGORY.items():
+        if keyword in path_lower:
+            return category
+    return "user_profile"
+
+def _extract_project_name(path):
+    parts = path.replace("\\", "/").split("/")
+    for i, p in enumerate(parts):
+        if p.lower() in ("projects", "project") and i + 1 < len(parts):
+            return parts[i + 1].replace(".md", "")
+    return "general"
+
 @shared_task
 def perform_file_operations(user_msg_content, ai_msg_content):
     try:
@@ -112,12 +140,28 @@ def perform_file_operations(user_msg_content, ai_msg_content):
         if not actions:
             return "No valid file actions found in response."
 
-        fs = FileSystemService()
+        fm = FileManager()
         results = []
         for act in actions:
-            if act.get('action') == 'write' and 'path' in act:
-                res = fs.write_file(act['path'], act['content'])
-                results.append(f"Wrote {act['path']}")
+            # New format: category + content
+            category = act.get('category', '')
+            content = act.get('content', '')
+            
+            # Old format fallback: action + path
+            if not category and act.get('action') == 'write' and act.get('path'):
+                path = act['path']
+                category = _map_old_path_to_category(path)
+                content = act.get('content', '')
+            
+            if not category or not content:
+                continue
+                
+            if category == "project":
+                project_name = act.get('project_name', '') or _extract_project_name(act.get('path', ''))
+                res = fm.write_project_knowledge(project_name, content)
+            else:
+                res = fm.write_knowledge(category, content)
+            results.append(res)
         
         return f"File Ops Success: {', '.join(results)}"
 
@@ -132,6 +176,27 @@ def run_scribe_consolidation():
     Run this every 30-60 minutes or after X messages.
     """
     scribe = ScribeService()
-    # Batch size controls how much memory/tokens we use per run.
     result = scribe.run_full_consolidation(batch_size=50)
     return result
+
+@shared_task
+def run_memory_maintenance():
+    from .services.memory_maintenance import MemoryMaintenanceService
+    mm = MemoryMaintenanceService()
+    results = mm.run_full_maintenance()
+    return f"Maintenance complete: {'; '.join(results)}"
+
+
+@shared_task
+def consolidate_knowledge_files():
+    """
+    Consolidate stale/duplicate files into the canonical structure.
+    Run periodically to keep the file system clean.
+    """
+    try:
+        fm = FileManager()
+        empty_removed = fm.cleanup_empty_files()
+        consolidated = fm.consolidate_stale_files()
+        return f"Cleaned {empty_removed} empty files. Consolidated: {consolidated}"
+    except Exception as e:
+        return f"Consolidation error: {e}"
