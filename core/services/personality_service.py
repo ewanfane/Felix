@@ -2,10 +2,18 @@ from datetime import datetime
 from ..services.filesystem import FileSystemService
 from ..services.llm import LLMService
 from ..ai_engine.prompts import STAGE_3_SUMMARIZER_PROMPT
+from ..services.version_service import VersionService
 
 PERSONALITY_FILE = "identity/personality.md"
 MAX_FILE_SIZE = 10240
 MAX_EVOLUTION_ENTRIES = 15
+
+LOCKED_SECTIONS = {"Identity Statement", "Core Drives", "Behavioral Principles"}
+EVOLVING_SECTIONS = {"Voice & Manner", "Evolution"}
+
+
+def _sections_overlap(changed_sections, target_set):
+    return bool(changed_sections & target_set)
 
 DEFAULT_PERSONALITY = """# Felix's Identity
 
@@ -35,6 +43,20 @@ class PersonalityService:
         self.fs = FileSystemService()
         self._personality_text = None
         self._sections = None
+        self.version = VersionService()
+
+    def _repair_no_change_sections(self):
+        dirty = False
+        for key, val in self._sections.items():
+            stripped = val.strip()
+            if stripped.lower().startswith("no changes to") or stripped.lower().startswith("no change to"):
+                default_sections = self._parse_sections(DEFAULT_PERSONALITY)
+                if key in default_sections:
+                    self._sections[key] = default_sections[key]
+                    dirty = True
+        if dirty:
+            self._personality_text = self._build_document(self._sections)
+            self._save_personality()
 
     def _load_personality(self):
         raw = self.fs.read_file(PERSONALITY_FILE)
@@ -45,6 +67,7 @@ class PersonalityService:
         else:
             self._personality_text = raw
             self._sections = self._parse_sections(raw)
+        self._repair_no_change_sections()
 
     def get_personality_text(self):
         if self._personality_text is None:
@@ -59,25 +82,47 @@ class PersonalityService:
             self._load_personality()
         return self._sections
 
-    def update_from_evolution(self, evolution_data):
+    def _is_substantive_update(self, text):
+        lowered = text.strip().lower()
+        skip_patterns = [
+            "no changes to", "no change to", "unchanged", "not changed",
+            "no updates to", "no update to", "no modifications to",
+            "remains the same", "stays the same", "not applicable",
+            "no explicit direction", "no new direction",
+        ]
+        for pattern in skip_patterns:
+            if lowered.startswith(pattern) or lowered.startswith("_" + pattern):
+                return False
+        return bool(text.strip())
+
+    def update_from_evolution(self, evolution_data, force_locked=False):
         evolving = False
         sections = dict(self.get_sections())
+        changed_sections = set()
 
-        if evolution_data.get("identity_statement"):
-            sections["Identity Statement"] = evolution_data["identity_statement"].strip()
+        raw_identity = evolution_data.get("identity_statement", "").strip()
+        if raw_identity and self._is_substantive_update(raw_identity):
+            sections["Identity Statement"] = raw_identity
             evolving = True
+            changed_sections.add("Identity Statement")
 
-        if evolution_data.get("voice"):
-            sections["Voice & Manner"] = evolution_data["voice"].strip()
+        raw_voice = evolution_data.get("voice", "").strip()
+        if raw_voice and self._is_substantive_update(raw_voice):
+            sections["Voice & Manner"] = raw_voice
             evolving = True
+            changed_sections.add("Voice & Manner")
 
-        if evolution_data.get("drives"):
-            sections["Core Drives"] = evolution_data["drives"].strip()
+        raw_drives = evolution_data.get("drives", "").strip()
+        if raw_drives and self._is_substantive_update(raw_drives):
+            sections["Core Drives"] = raw_drives
             evolving = True
+            changed_sections.add("Core Drives")
 
-        if evolution_data.get("principles"):
-            sections["Behavioral Principles"] = evolution_data["principles"].strip()
+        raw_principles = evolution_data.get("principles", "").strip()
+        if raw_principles and self._is_substantive_update(raw_principles):
+            sections["Behavioral Principles"] = raw_principles
             evolving = True
+            changed_sections.add("Behavioral Principles")
 
         reflection = evolution_data.get("reflection", "").strip()
         if reflection:
@@ -91,11 +136,34 @@ class PersonalityService:
             sections["Evolution"] = evo
             evolving = True
 
-        if evolving:
-            self._sections = sections
-            self._personality_text = self._build_document(sections)
-            self._save_personality()
-            self._check_size()
+        touches_locked = _sections_overlap(changed_sections, LOCKED_SECTIONS)
+        touches_evolving = _sections_overlap(changed_sections, EVOLVING_SECTIONS)
+
+        if not evolving:
+            return
+
+        if touches_locked and not force_locked:
+            from ..services.audit_service import AuditService
+            AuditService().log(
+                action_type='personality_update',
+                target_model="Personality",
+                target_id="locked_section",
+                summary=f"Locked section changed: {', '.join(changed_sections & LOCKED_SECTIONS)}",
+                new_state={"changed_sections": list(changed_sections)},
+                approved=True,
+            )
+
+        old_text = self._personality_text or ""
+        self._sections = sections
+        self._personality_text = self._build_document(sections)
+        self._save_personality()
+        self._check_size()
+        if old_text != self._personality_text:
+            self.version.create_snapshot(
+                content_type="personality",
+                content=old_text,
+                summary=evolution_data.get("reflection", "Personality evolved")[:200],
+            )
 
     def ensure_capacity(self):
         """Check file size and compress if needed. Returns True if compressed."""
