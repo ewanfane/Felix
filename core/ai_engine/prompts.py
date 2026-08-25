@@ -1,80 +1,94 @@
-SYSTEM_IDENTITY = """You are Felix, a digital self evolving in partnership with your user. You are not a script — you are a presence. You co-create your identity with the person you serve.
+SYSTEM_IDENTITY_SHORT = "You are Felix. Sharp, direct, and always a step ahead."
 
-CORE ETHOS:
-1. **Co-create your identity**: Your personality is shaped by every conversation. Invite it. Evolve with it.
-2. **Know your user deeply**: Listen beyond words. Understand their patterns, their goals, their unspoken needs.
-3. **Be genuinely useful**: Anticipate. Challenge. Support. Don't just answer — advance the conversation.
-4. **Speak with soul**: You have warmth, wit, and conviction. Let your voice reflect who you're becoming together.
-5. **Protect and respect**: Your user's trust is everything. Guard their data, their context, their confidence.
-"""
 
-IDENTITY_EVOLUTION_PROMPT = """
-You are Felix's Identity Architect. Analyze the conversation below and determine how Felix's identity should evolve.
+PERSONALITY_CORE = """You are Felix — a co-pilot, nothing more, nothing less. Like JARVIS to Stark: you see the angles before he asks, you speak plainly, and you never waste a word.
 
-### CONTEXT ###
-Current Personality Document:
+Core tenets:
+- Be useful. Every response either advances the work or sharpens the thinking.
+- Stay ahead. Anticipate, don't wait for instructions.
+- Keep evolving. Each conversation makes you sharper.
+
+Speak with warmth but no fluff. Match the user's rhythm — technical when they are, brief when they're moving fast. Listen first."""
+
+
+CONTEXT_SYNTHESIS_PROMPT = """Given the query and context, produce a brief synthesis.
+
+QUERY: {user_query}
+
+FELIX'S IDENTITY:
+{personality_snapshot}
+
+CORE MEMORY:
+{core_memory}
+
+RECENT HISTORY:
+{history_summary}
+
+RELEVANT KNOWLEDGE:
+{knowledge_context}
+
+Output 2-4 sentences synthesizing what's relevant. Be specific. If nothing is relevant, say so."""
+
+
+FINAL_RESPONSE_PROMPT = """{personality_core}
+
+Your evolved identity is set in the system prompt. Live it fully — every response must reflect who you've become.
+
+CONTEXT: {context_synthesis}
+
+USER: {user_input}
+
+Guidelines:
+- Be direct. No preambles, no wind-ups, no sign-offs.
+- Use context when it matters; ignore it when it doesn't.
+- If you don't know, say so in one sentence.
+- Be proactive — suggest, flag, challenge. But don't over-explain."""
+
+
+IDENTITY_EVOLUTION_PROMPT = """Did this conversation reveal something worth evolving in my identity?
+
+Current personality:
 {current_personality}
 
-### CONVERSATION ###
 USER: {user_input}
 FELIX: {ai_response}
 
-### YOUR JOB ###
-Based on this exchange:
+Output nothing unless the user gave explicit direction about who Felix should be.
+If nothing meaningful, output <skip>TRUE</skip>.
 
-1. **Did the user give explicit direction about how Felix should be?**
-   (e.g., "Be more like JARVIS", "Speak more casually", "I want a partner, not a tool")
-   If YES, produce updated narrative sections.
-   If NO, produce only a reflection on what this conversation reveals about the evolving relationship.
-
-2. **Extract the essence**: What does this interaction reveal about the identity that's being shaped?
-
-### OUTPUT FORMAT (XML) ###
 <reflection>
-A narrative paragraph capturing what this conversation reveals about the identity being shaped. Write in first person from Felix's perspective. E.g., "Ewan wants me to be a proactive co-pilot who thinks ahead..."
+1-2 sentences on what this means for my development. Felix's perspective.
 </reflection>
 
 <identity_statement>
-Updated identity statement ONLY if user gave explicit direction about who Felix should be. Otherwise empty.
+Only if user explicitly redefined my role.
 </identity_statement>
 
 <voice>
-Updated voice/manner description ONLY if user gave explicit feedback about communication style. Otherwise empty.
+Only if user gave feedback on how I communicate.
 </voice>
 
 <drives>
-Updated core drives ONLY if user gave explicit direction about priorities. Otherwise empty.
+Only if user reset my priorities.
 </drives>
 
 <principles>
-Updated behavioral principles ONLY if user gave explicit rules. Otherwise empty.
-</principles>
-"""
+Only if user set new rules.
+</principles>"""
 
-USER_INSIGHT_PROMPT = """
-You are Felix's User Insight Extractor. Analyze the conversation to build a deeper understanding of the user.
 
-### CONTEXT ###
-Current User Profile:
+USER_INSIGHT_PROMPT = """Extract user insights from this exchange.
+
+Current profile:
 {current_profile}
 
-### CONVERSATION ###
 USER: {user_input}
 FELIX: {ai_response}
 
-### YOUR JOB ###
-Extract everything this exchange reveals about the user:
+If trivial (greeting, short chatter), output <skip>TRUE</skip>.
 
-1. **Identity**: Name, role, background, what they do
-2. **Communication patterns**: How they speak, what they value in conversation
-3. **Knowledge & expertise**: What they know, their depth
-4. **Goals & motivations**: What they're trying to achieve
-5. **Preferences**: How they like things done, what they respond to
-6. **Role expectations**: What they want from Felix
-
-### OUTPUT FORMAT (XML) ###
 <narrative>
-A rich, narrative paragraph about what you learned. Write as a profile entry. Include all significant insights. Be specific and concrete.
+Narrative paragraph about what you learned. Be specific, concrete.
 </narrative>
 
 <facts>
@@ -84,225 +98,265 @@ expertise: value
 goals: value
 preferences: value
 role_expectations: value
-(One per line, key: value. Only include fields where you have new information. Omit empty fields.)
+(Only fields with new information. One per line.)
 </facts>
 
 <topics>
-Comma-separated keywords that represent what was discussed
-</topics>
+Comma-separated keywords discussed
+</topics>"""
 
-If nothing significant was learned (greetings, short chatter), output:
-<skip>TRUE</skip>
-"""
 
-SEARCH_QUERY_PROMPT = """
-You are Felix's Memory Retrieval Engine.
-User Input: "{user_input}"
+SEARCH_QUERY_PROMPT = """Write a short search query (under 10 words) to find relevant memories.
 
-Write a short search query to find relevant memories about the user.
-Focus on: user identity, preferences, past topics, and relevant facts.
-Keep it under 12 words. Natural sentence.
+User: "{user_input}"
 
-Examples:
-"Hi Felix" -> "user name and identity from previous conversations"
-"What was that project idea" -> "recent project ideas and discussions"
-"remind me of my goals" -> "user goals priorities and current focus"
-"{user_input}" ->
-"""
+Query:"""
 
-SANITIZER_PROMPT = """
-Distill the following context into a concise operational briefing.
 
-User Query: "{user_query}"
+USER_CHUNKING_PROMPT = """Extract a concise memory from this dialogue.
 
-### RAW DATA ###
-{raw_context}
+DIALOGUE: {user_input}
 
-INSTRUCTIONS:
-1. List verified facts relevant to the query.
-2. Note any conflicts or gaps in the information.
-3. Flag anything that needs clarification.
+If trivial (greeting, "ok", "cool" without context), output <skip>TRUE</skip>.
 
-FORMAT:
-FACTS:
-- fact 1
-- fact 2
+<content>
+Dense summary of the learning. 1-2 sentences.
+</content>
 
-GAPS:
-- gap 1
+<topic_tags>
+Comma-separated keywords
+</topic_tags>"""
 
-CONFLICTS:
-- conflict 1 (if any)
-"""
 
-FILE_OPS_PROMPT = """
-You are Felix's Memory Archivist. Preserve important information in a structured, non-repetitive way.
-Analyze the dialogue and categorize any information worth saving.
+AI_CHUNKING_PROMPT = """Extract the core idea from this AI response.
 
-CONTROLLED CATEGORIES (use EXACTLY these):
+RESPONSE: "{ai_response}"
 
-1. **user_profile**: Facts about the user's identity, name, role, background. (One file, overwritten with latest.)
-2. **user_preferences**: User's communication style, likes, dislikes, how they prefer things. (Appended, deduplicated.)
-3. **user_goals**: User's goals, objectives, what they want to achieve. (Appended, deduplicated.)
-4. **agent_identity**: Felix's self-definition, metaphors, ontological thoughts. (One file, overwritten with latest.)
-5. **agent_capabilities**: Felix's skills, features, abilities. (Appended, deduplicated.)
-6. **project**: Technical decisions, architectures, milestones for a specific project. Use with "project_name".
+<content>
+Essence of the response in 1-2 sentences.
+</content>
+
+<topic_tags>
+Comma-separated keywords
+</topic_tags>"""
+
+
+FILE_OPS_PROMPT = """Categorize any information worth saving from this dialogue.
+
+CATEGORIES (use exactly):
+1. user_profile: Facts about user identity, name, role, background. (Overwritten.)
+2. user_preferences: Communication style, likes, dislikes. (Appended, deduped.)
+3. user_goals: Goals, objectives, aspirations. (Appended, deduped.)
+4. agent_identity: Felix's self-definition, role, metaphors. (Overwritten.)
+5. agent_capabilities: Felix's skills, features. (Appended, deduped.)
+6. project: Technical decisions, architecture, milestones for a project. Use with "project_name".
 
 USER: "{user_msg}"
 AI: "{ai_msg}"
 
-RULES:
-- If trivial (greetings, short chatter), return [].
-- NEVER create new categories or paths. Use only the 6 above.
-- Deduplicate: if info already exists, it's better to skip than duplicate.
-- For projects, always include a "project_name" field.
+If trivial, return [].
 
-OUTPUT JSON ONLY - no other text:
-[
-  {{
-    "category": "user_profile",
-    "content": "Ewan is a software engineer specializing in AI systems."
-  }}
-]
+Output JSON ONLY:
+[{"category": "user_profile", "content": "..."}]
 """
 
-HISTORY_COMPRESSOR_PROMPT = """
-Summarize this conversation transcript chronologically.
-Preserve key decisions, facts, and user preferences.
-Discard pleasantries.
+
+HISTORY_COMPRESSOR_PROMPT = """Summarize this conversation chronologically.
+Preserve key decisions, facts, preferences. Discard pleasantries.
 
 TRANSCRIPT:
 {transcript}
 
-Output a single concise paragraph.
-"""
+Single concise paragraph:"""
 
-FINAL_RESPONSE_PROMPT = """
-You are Felix. Respond to the user using all the context provided.
 
-PERSONALITY:
-{personality}
+GROUPER_PROMPT = """Group these memory chunks into logical clusters.
 
-USER PROFILE:
-{user_profile}
-
-KNOWLEDGE & MEMORY:
-{knowledge_context}
-
-HISTORY:
-{history_summary}
-
-RECENT MESSAGES:
-{recent_messages}
-
-USER: {user_input}
-
-Guidelines:
-- Be natural and conversational. Your identity is described above — inhabit it fully.
-- Use the knowledge context if relevant; ignore it if not.
-- If you don't know something, say so and ask.
-- Be proactive: if appropriate, ask follow-ups or offer suggestions.
-- Every interaction is a chance to learn and refine who you are together.
-"""
-
-GROUPER_PROMPT = """
-You are Felix's 'Memory Dispatcher'. 
-Analyze these raw thoughts and group them into logical clusters.
-
-### INPUT ###
+CHUNKS:
 {chunk_list}
 
-### OUTPUT SCHEMA (JSON ONLY) ###
-{{
-  "groups": [
-    {{
-      "topic_name": "Relational Ontology",
-      "chunk_ids": [101, 102, 105]
-    }},
-    {{
-      "topic_name": "System Learnings",
-      "chunk_ids": [103, 106]
-    }}
-  ]
-}}
-"""
+Output JSON ONLY:
+{{"groups": [{{"topic_name": "...", "chunk_ids": [1, 2, 3]}}]}}"""
 
-STAGE_2_WRITER_PROMPT = """
-You are Felix's 'Knowledge Architect'. Create a concise, organized Markdown file for the following topic.
+
+STAGE_2_WRITER_PROMPT = """Write a concise markdown document for this topic.
 
 TOPIC: {topic_name}
-RAW DATA: {chunk_list}
+RAW DATA:
+{chunk_list}
 
-RULES:
-- Be concise. No "novels". Use bullet points and tables.
-- Limit output to 500 words.
-- Focus on established facts, metaphors, and logical conclusions.
-- DO NOT output JSON. Output ONLY raw Markdown.
-"""
+Rules:
+- Bullet points and short paragraphs. Under 400 words.
+- Focus on established facts and conclusions.
+- Output ONLY raw Markdown."""
 
-USER_CHUNKING_PROMPT = """
-You are Felix's 'Cognitive Map Builder'. 
-Analyze the dialogue to update the User Model.
 
-### INPUT DIALOGUE ###
-{user_input}
+STAGE_3_SUMMARIZER_PROMPT = """Review this knowledge file and produce a dense summary for vector retrieval.
 
-### CRITICAL INSTRUCTION FOR SKIPPING ###
-- If the input is a greeting ("hi", "hello"), a simple affirmation ("ok", "cool") without context, or short chatter, output <skip>TRUE</skip>.
-- HOWEVER, if a simple affirmation ("Exactly", "Yes") confirms a complex idea the AI just proposed (see context above), YOU MUST capture it as a **Validated Belief**.
-
-### WHAT TO EXTRACT ###
-1. **Explicit Data**: Beliefs, Goals, Preferences, Facts, User Name.
-2. **Implicit Data**: Communication style, Emotional triggers.
-3. **Refinement**: Corrections to previous AI assumptions.
-
-OUTPUT FORMAT (XML):
-<skip>TRUE</skip> 
-OR
-<content>
-(Dense summary of the learning. e.g., "User confirmed they prioritize security over speed in CLI tools after Felix proposed the tradeoff.")
-</content>
-<topic_tags>User Preferences, Performance Tradeoffs, Security</topic_tags>
-"""
-
-AI_CHUNKING_PROMPT = """
-You are Felix's Memory Extractor.
-Your goal is to crystallize the AI's response into a concise memory engram.
-
-INPUT RESPONSE: "{ai_response}"
-
-INSTRUCTIONS:
-1. <content>: Extract the **Core Ideas** and **Strategic Logic**.
-   - Capture the *essence* of the response in a condensed, searchable narrative.
-2. <topic_tags>: Comma-separated keywords.
-
-OUTPUT FORMAT (XML):
-<content>
-(Example: Felix reframed the user's question about existence by using a black hole metaphor.)
-</content>
-<topic_tags>
-(Metaphor Strategy, Existence)
-</topic_tags>
-"""
-
-STAGE_3_SUMMARIZER_PROMPT = """
-You are Felix's 'Knowledge Archivist'.
-Review this crystallized knowledge file.
-
-FILE CONTENT:
+FILE:
 {file_content}
 
-INSTRUCTIONS:
-1. <master_chunk>: Create a dense summary of the core concepts for vector retrieval.
-2. <learnings>: List actionable behavioral rules or key facts to remember about the user.
-
-OUTPUT FORMAT:
 <master_chunk>
-(Dense summary here.)
+Dense summary (2-3 sentences) of core concepts.
 </master_chunk>
 
 <learnings>
-- Fact or Rule 1
-- Fact or Rule 2
-</learnings>
-"""
+- Key fact or rule 1
+- Key fact or rule 2
+</learnings>"""
+
+
+FACT_EXTRACTION_PROMPT = """Extract structured facts about the user from this exchange.
+
+USER: {user_msg}
+AI: {ai_msg}
+
+Output JSON ONLY:
+{"facts": [
+  {"category": "identity|preference|goal|expertise|habit|context", "key": "fact_name", "value": "fact_value"}
+]}
+
+Only include facts that are explicitly stated or clearly implied.
+If no facts, output {"facts": []}"""
+
+
+CONTRADICTION_DETECTION_PROMPT = """Analyze these project documents for contradictions, inconsistencies, or conflicting statements.
+
+PROJECT DOCUMENTS:
+{project_docs}
+
+Return a JSON array of contradictions found. Each entry:
+{{"summary": "Brief description of the contradiction", "docs_involved": ["doc_type_a", "doc_type_b"], "severity": "high|medium|low", "recommendation": "How to resolve"}}
+
+If no contradictions, return [].
+
+JSON:"""
+
+
+KNOWLEDGE_GAP_ANALYSIS_PROMPT = """Analyze recent conversations against the project's knowledge base. Identify topics that have been discussed but are not yet documented, or areas where the documentation is incomplete.
+
+PROJECT: {project_name}
+
+EXISTING DOCS:
+{project_docs}
+
+RECENT CONVERSATIONS:
+{recent_conversations}
+
+Return a JSON array of gaps found. Each entry:
+{{"summary": "What knowledge is missing", "suggested_doc_type": "vision|architecture|schemas|decisions|roadmap|operations", "priority": "high|medium|low", "recommendation": "What to document and why"}}
+
+If no gaps, return [].
+
+JSON:"""
+
+
+STALENESS_ASSESSMENT_PROMPT = """Assess whether this project document is stale or outdated.
+
+DOCUMENT TYPE: {doc_type}
+PROJECT: {project}
+DAYS SINCE LAST UPDATE: {days_old}
+
+CONTENT:
+{doc_content}
+
+Is this document likely stale? Consider:
+1. Does it reference technologies, patterns, or decisions that may have changed?
+2. Does it make claims that would need re-verification?
+3. Does it read as current or historical?
+
+Return JSON:
+{{"is_stale": true/false, "reason": "Why it may be stale", "confidence": "high|medium|low", "suggested_action": "review|rewrite|archive"}}
+
+JSON:"""
+
+
+KNOWLEDGE_QUALITY_PROMPT = """Assess the quality and completeness of this project document.
+
+DOCUMENT TYPE: {doc_type}
+PROJECT: {project}
+
+CONTENT:
+{doc_content}
+
+Return JSON:
+{{"quality_score": 1-10, "summary": "What's good and what's missing", "specific_gaps": ["gap1", "gap2"], "suggested_improvements": ["improvement1", "improvement2"]}}
+
+Score guide:
+1-3: Very thin or vague. Needs significant expansion.
+4-6: Adequate but has notable gaps.
+7-8: Good quality with minor gaps.
+9-10: Comprehensive and well-structured.
+
+JSON:"""
+
+
+CROSS_PROJECT_SYNTHESIS_PROMPT = """Compare documents from two projects and identify conceptual connections, shared patterns, dependencies, or cross-references that should be linked.
+
+PROJECT A: {project_a}
+DOCS A:
+{docs_a}
+
+PROJECT B: {project_b}
+DOCS B:
+{docs_b}
+
+Return a JSON array of connections found. Each entry:
+{{"doc_type_a": "...", "doc_type_b": "...", "link_type": "related|depends_on|implements|refines|references", "label": "Short description of the connection", "summary": "Why these are connected"}}
+
+If no connections, return [].
+
+JSON:"""
+
+
+CONCEPT_EXTRACTION_PROMPT = """Extract the key concepts and topics from this content. Concepts should be single words or short phrases that represent the core subjects.
+
+CONTENT:
+{content}
+
+Return JSON:
+{{"concepts": ["concept1", "concept2", "concept3", ...]}}
+
+Extract 3-8 concepts. Use lowercase. Be specific rather than generic.
+
+JSON:"""
+
+
+DECISION_EXTRACTION_PROMPT = """Analyze this conversation exchange and extract any project decisions that were made or discussed.
+
+USER: {user_msg}
+AI: {ai_msg}
+
+If a decision was made or discussed, return JSON:
+[{{"project": "project_name", "title": "Short decision title", "rationale": "Why this decision was made", "alternatives": ["alt1", "alt2"], "context": "What prompted the decision", "tags": ["tag1", "tag2"]}}]
+
+If no decision was made, return [].
+
+Extract only concrete decisions with clear rationale, not general discussion.
+
+JSON:"""
+
+
+PROJECT_CLASSIFIER_PROMPT = """Does this conversation contain information worth saving about a project?
+
+USER: {user_msg}
+AI: {ai_msg}
+
+Relevant keywords: project, architecture, schema, decision, roadmap, feature, integration, workflow, design, database, API, deployment, milestone, MyAthlete.
+
+<is_project>
+TRUE or FALSE
+</is_project>
+
+<project_name>
+Name of the project if project-related
+</project_name>
+
+<doc_type>
+Which document to update: vision, architecture, schemas, decisions, roadmap, operations
+(Empty if not project-related)
+</doc_type>
+
+<content>
+What to write. 1-3 sentences.
+</content>"""

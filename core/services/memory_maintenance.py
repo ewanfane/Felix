@@ -1,28 +1,72 @@
 from datetime import datetime, timedelta
 from django.utils import timezone
 from django.db import transaction
-from ..models import MemoryChunk, ChatMessage, ChatSession
+from ..models import MemoryChunk, ChatMessage, ChatSession, LifecycleStage
 from ..services.filesystem import FileSystemService
 from ..services.personality_service import PersonalityService
 from ..services.user_model_service import UserModelService
 from ..services.file_manager import FileManager
 from ..services.scribe import ScribeService
+from ..services.audit_service import AuditService
 
 
 class MemoryMaintenanceService:
     def __init__(self):
         self.fs = FileSystemService()
+        self.audit = AuditService()
 
     def run_full_maintenance(self):
         results = []
         results.append(self.prune_orphaned_chunks())
-        results.append(self.prune_stale_chunks())
         results.append(self.cleanup_empty_sessions())
         results.append(self.compress_personality())
         results.append(self.compress_profile())
         results.append(self.run_scribe_consolidation())
+        results.append(self.deactivate_stale_scratchpad())
+        results.append(self.manage_lifecycle_stages())
+        results.append(self.run_knowledge_maintenance())
         results.append(self.cleanup_file_system())
         return results
+
+    def run_knowledge_maintenance(self):
+        try:
+            from .knowledge_maintenance_service import KnowledgeMaintenanceService
+            km = KnowledgeMaintenanceService()
+            sub_results = km.run_full_maintenance()
+            self.audit.log(
+                action_type="knowledge_maintenance",
+                target_model="KnowledgeMaintenanceService",
+                summary=f"Knowledge maintenance: {'; '.join(sub_results)}",
+            )
+            return f"Knowledge maintenance complete"
+        except Exception as e:
+            return f"Knowledge maintenance error: {e}"
+
+    def manage_lifecycle_stages(self):
+        results = []
+        cutoff_active = timezone.now() - timedelta(hours=72)
+        stale = MemoryChunk.objects.filter(
+            lifecycle_stage=LifecycleStage.INBOX,
+            is_active=True,
+            created_at__lt=cutoff_active,
+        )
+        count = stale.count()
+        if count:
+            stale.update(lifecycle_stage=LifecycleStage.ACTIVE)
+            results.append(f"Promoted {count} inbox chunks to active")
+
+        cutoff_archive = timezone.now() - timedelta(days=14)
+        archival = MemoryChunk.objects.filter(
+            lifecycle_stage=LifecycleStage.ACTIVE,
+            is_active=True,
+            created_at__lt=cutoff_archive,
+        )
+        count2 = archival.count()
+        if count2:
+            archival.update(lifecycle_stage=LifecycleStage.ARCHIVED)
+            results.append(f"Archived {count2} active chunks")
+
+        return "; ".join(results) if results else "Lifecycle OK"
 
     def prune_orphaned_chunks(self):
         count = 0
@@ -36,17 +80,6 @@ class MemoryMaintenanceService:
         if count:
             orphaned.delete()
         return f"Pruned {count} orphaned chunks"
-
-    def prune_stale_chunks(self, max_days=30):
-        cutoff = timezone.now() - timedelta(days=max_days)
-        stale = MemoryChunk.objects.filter(
-            consolidated=False,
-            created_at__lt=cutoff
-        )
-        count = stale.count()
-        if count:
-            stale.delete()
-        return f"Pruned {count} stale chunks older than {max_days}d"
 
     def cleanup_empty_sessions(self):
         empty_sessions = ChatSession.objects.filter(messages__isnull=True)
@@ -69,9 +102,26 @@ class MemoryMaintenanceService:
         try:
             scribe = ScribeService()
             result = scribe.run_full_consolidation(batch_size=30)
+            self.audit.log(
+                action_type="scribe_consolidation",
+                target_model="ScribeService",
+                summary=result,
+            )
             return f"Scribe: {result}"
         except Exception as e:
             return f"Scribe error: {e}"
+
+    def deactivate_stale_scratchpad(self, max_hours=48):
+        cutoff = timezone.now() - timedelta(hours=max_hours)
+        stale = MemoryChunk.objects.filter(
+            chunk_type="raw",
+            is_active=True,
+            created_at__lt=cutoff,
+        )
+        count = stale.count()
+        if count:
+            stale.update(is_active=False)
+        return f"Deactivated {count} stale scratchpad chunks older than {max_hours}h"
 
     def cleanup_file_system(self):
         try:
@@ -91,15 +141,9 @@ class MemoryMaintenanceService:
                     shutil.rmtree(item)
                 else:
                     item.unlink()
-        return "Data folder wiped"
+        MemoryChunk.objects.all().delete()
+        return "Data folder and vector store wiped"
 
     def get_boarding_status(self):
-        ps = PersonalityService()
-        um = UserModelService()
-        return {
-            "personality_evolved": ps.is_onboarding_complete(),
-            "profile_filled": um.is_onboarding_complete(),
-            "fill_placeholder_count": um.fill_placeholder_count(),
-            "user_name": um.get_name(),
-            "interaction_count": um.get_metadata().get("interaction_count", 0),
-        }
+        from ..services.core_memory_service import CoreMemoryService
+        return CoreMemoryService().get_onboarding_status()

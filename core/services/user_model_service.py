@@ -1,5 +1,6 @@
 from datetime import datetime
 from ..services.filesystem import FileSystemService
+from ..services.version_service import VersionService
 
 PROFILE_FILE = "user/profile.md"
 MAX_FILE_SIZE = 10240
@@ -62,6 +63,7 @@ class UserModelService:
         self.fs = FileSystemService()
         self._profile_text = None
         self._sections = None
+        self.version = VersionService()
         self._metadata = {
             "first_met": "",
             "last_interaction": "",
@@ -204,6 +206,7 @@ class UserModelService:
                         evolving = True
 
         if evolving:
+            old_text = self._profile_text or ""
             metadata["last_interaction"] = now
             metadata["interaction_count"] = metadata.get("interaction_count", 0) + 1
             self._sections = sections
@@ -211,6 +214,12 @@ class UserModelService:
             self._profile_text = self._build_document(sections, metadata)
             self._save_profile()
             self._check_size()
+            if old_text != self._profile_text:
+                self.version.create_snapshot(
+                    content_type="user_profile",
+                    content=old_text,
+                    summary=insight_data.get("narrative", "Profile evolved")[:200],
+                )
 
     def ensure_capacity(self):
         self.get_profile_text()

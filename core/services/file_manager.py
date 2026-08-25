@@ -2,6 +2,7 @@ import os
 import re
 from pathlib import Path
 from ..services.filesystem import FileSystemService
+from ..services.project_knowledge_service import ProjectKnowledgeService
 
 CANONICAL_PATHS = {
     "user_profile": "knowledge/user/profile.md",
@@ -33,6 +34,7 @@ PROTECTED_PATHS = [
 class FileManager:
     def __init__(self):
         self.fs = FileSystemService()
+        self.project_knowledge = ProjectKnowledgeService()
 
     def write_knowledge(self, category, content):
         path = CANONICAL_PATHS.get(category)
@@ -48,8 +50,9 @@ class FileManager:
 
     def write_project_knowledge(self, project_name, content):
         safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', project_name.lower())[:40]
-        path = f"knowledge/projects/{safe_name}.md"
-        return self._write_overwrite(path, content)
+        self.project_knowledge.ensure_project_structure(project_name)
+        result = self.project_knowledge.write_doc(project_name, "operations", content)
+        return result
 
     def classify_content(self, topic_name, content_text=""):
         topic_lower = topic_name.lower()
